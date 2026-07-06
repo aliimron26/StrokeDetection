@@ -159,6 +159,14 @@ def calculate_asymmetry_metrics(landmark_points):
     """
     Menghitung metrik asimetri wajah berdasarkan titik-titik landmark tertentu.
     Mengembalikan dictionary metrik.
+
+    CATATAN PERBAIKAN:
+    Sebelumnya mouth_asymmetry dihitung dari selisih koordinat X antara sudut
+    mulut kiri dan kanan -- itu sebenarnya mengukur LEBAR mulut, bukan asimetri,
+    sehingga nilainya nyaris sama untuk semua orang (normal maupun stroke) dan
+    tidak informatif. Asimetri mulut yang relevan untuk deteksi stroke adalah
+    perbedaan TINGGI (koordinat Y) antar sudut mulut -- yaitu ketika satu sisi
+    mulut turun/naik lebih rendah dibanding sisi lainnya ("mencong").
     """
     if not landmark_points or len(landmark_points) < TOTAL_LANDMARKS:
         return None
@@ -172,7 +180,9 @@ def calculate_asymmetry_metrics(landmark_points):
     chin = landmark_points[CHIN_INDEX]
     forehead = landmark_points[FOREHEAD_INDEX]
 
-    mouth_asymmetry = abs(left_mouth[0] - right_mouth[0]) / LANDMARK_IMAGE_SIZE
+    # DIPERBAIKI: gunakan selisih koordinat Y (tinggi), bukan X (lebar mulut).
+    mouth_asymmetry = abs(left_mouth[1] - right_mouth[1]) / LANDMARK_IMAGE_SIZE
+
     left_eye_height = abs(left_eye_top[1] - left_eye_bottom[1])
     right_eye_height = abs(right_eye_top[1] - right_eye_bottom[1])
     eye_asymmetry = abs(left_eye_height - right_eye_height) / LANDMARK_IMAGE_SIZE
@@ -185,10 +195,21 @@ def calculate_asymmetry_metrics(landmark_points):
     }
 
 
-def interpret_asymmetry(value, threshold=0.05):
-    """Mengubah nilai asimetri menjadi keterangan kualitatif."""
-    if value > threshold:
+def interpret_asymmetry(value, low_threshold=0.015, high_threshold=0.035):
+    """
+    Mengubah nilai asimetri menjadi keterangan kualitatif bertingkat.
+
+    CATATAN PERBAIKAN:
+    Sebelumnya hanya ada 2 tingkat (signifikan/ringan) dengan satu ambang batas
+    (0.05) yang terlalu rendah untuk metrik yang sudah diperbaiki, sehingga
+    hampir semua nilai jatuh ke kategori "signifikan" tanpa membedakan derajat
+    keparahan. Sekarang dibuat 3 tingkat agar lebih mudah dipahami dan tidak
+    membuat pengguna awam panik saat asimetri sebenarnya masih wajar.
+    """
+    if value > high_threshold:
         return "signifikan"
+    elif value > low_threshold:
+        return "sedang"
     else:
         return "ringan"
 
@@ -210,6 +231,17 @@ def build_user_message(landmark_points, stroke_probability, is_stroke):
     tilt_value = abs(metrics["face_tilt"])
     tilt_level = "miring" if tilt_value > 0.03 else "tegak"
 
+    # Kalimat klarifikasi: tiga metrik ini hanya indikator pendukung yang
+    # disederhanakan agar mudah dibaca; keputusan akhir AI mempertimbangkan
+    # seluruh 478 titik wajah secara menyeluruh, bukan hanya tiga angka ini.
+    clarifier = (
+        "Catatan: ketiga indikator di bawah ini adalah ringkasan sederhana dari "
+        "sebagian titik wajah untuk membantu Anda memahami hasil. Keputusan akhir "
+        "AI tetap didasarkan pada analisis menyeluruh terhadap 478 titik wajah, "
+        "sehingga tingkat probabilitas di atas adalah acuan utama, bukan indikator "
+        "di bawah ini secara terpisah."
+    )
+
     # Bagian hasil dan penjelasan
     if is_stroke:
         result_text = "Hasil: Terdeteksi indikasi STROKE"
@@ -219,6 +251,7 @@ def build_user_message(landmark_points, stroke_probability, is_stroke):
             f"- Asimetri sudut mulut: {metrics['mouth_asymmetry']:.2f} ({mouth_level})\n"
             f"- Perbedaan tinggi kelopak mata: {metrics['eye_asymmetry']:.2f} ({eye_level})\n"
             f"- Kemiringan wajah: {tilt_value:.2f} ({tilt_level})\n\n"
+            f"{clarifier}\n\n"
             "Nilai-nilai ini menunjukkan adanya ketidakseimbangan otot wajah yang mungkin menjadi tanda awal stroke."
         )
         recommendation = (
@@ -237,6 +270,7 @@ def build_user_message(landmark_points, stroke_probability, is_stroke):
             f"- Asimetri sudut mulut: {metrics['mouth_asymmetry']:.2f} ({mouth_level})\n"
             f"- Perbedaan tinggi kelopak mata: {metrics['eye_asymmetry']:.2f} ({eye_level})\n"
             f"- Kemiringan wajah: {tilt_value:.2f} ({tilt_level})\n\n"
+            f"{clarifier}\n\n"
             "Hasil ini menunjukkan tidak ada indikasi kuat stroke berdasarkan pola wajah."
         )
         recommendation = (
