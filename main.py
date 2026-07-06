@@ -155,69 +155,104 @@ def draw_landmarks_on_image(image_bgr, landmark_points, size=(LANDMARK_IMAGE_SIZ
     return img
 
 
-def get_risk_category(stroke_probability):
+def calculate_asymmetry_metrics(landmark_points):
     """
-    Mengelompokkan probabilitas stroke menjadi kategori risiko yang mudah
-    dipahami masyarakat umum. Berbeda dari metrik asimetri versi sebelumnya,
-    probabilitas ini diambil langsung dari keluaran model, sehingga jauh
-    lebih dapat diandalkan.
+    Menghitung metrik asimetri wajah berdasarkan titik-titik landmark tertentu.
+    Mengembalikan dictionary metrik.
+
+    CATATAN PERBAIKAN:
+    Sebelumnya mouth_asymmetry dihitung dari selisih koordinat X antara sudut
+    mulut kiri dan kanan -- itu sebenarnya mengukur LEBAR mulut, bukan asimetri,
+    sehingga nilainya nyaris sama untuk semua orang (normal maupun stroke) dan
+    tidak informatif. Asimetri mulut yang relevan untuk deteksi stroke adalah
+    perbedaan TINGGI (koordinat Y) antar sudut mulut -- yaitu ketika satu sisi
+    mulut turun/naik lebih rendah dibanding sisi lainnya ("mencong").
     """
-    if stroke_probability >= 0.7:
-        return "tinggi"
-    elif stroke_probability >= 0.3:
+    if not landmark_points or len(landmark_points) < TOTAL_LANDMARKS:
+        return None
+
+    left_mouth = landmark_points[MOUTH_LEFT_INDEX]
+    right_mouth = landmark_points[MOUTH_RIGHT_INDEX]
+    left_eye_top = landmark_points[LEFT_EYE_TOP_INDEX]
+    left_eye_bottom = landmark_points[LEFT_EYE_BOTTOM_INDEX]
+    right_eye_top = landmark_points[RIGHT_EYE_TOP_INDEX]
+    right_eye_bottom = landmark_points[RIGHT_EYE_BOTTOM_INDEX]
+    chin = landmark_points[CHIN_INDEX]
+    forehead = landmark_points[FOREHEAD_INDEX]
+
+    # DIPERBAIKI: gunakan selisih koordinat Y (tinggi), bukan X (lebar mulut).
+    mouth_asymmetry = abs(left_mouth[1] - right_mouth[1]) / LANDMARK_IMAGE_SIZE
+
+    left_eye_height = abs(left_eye_top[1] - left_eye_bottom[1])
+    right_eye_height = abs(right_eye_top[1] - right_eye_bottom[1])
+    eye_asymmetry = abs(left_eye_height - right_eye_height) / LANDMARK_IMAGE_SIZE
+    face_tilt = (forehead[0] - chin[0]) / LANDMARK_IMAGE_SIZE
+
+    return {
+        "mouth_asymmetry": round(mouth_asymmetry, 3),
+        "eye_asymmetry": round(eye_asymmetry, 3),
+        "face_tilt": round(face_tilt, 3)
+    }
+
+
+def interpret_asymmetry(value, low_threshold=0.015, high_threshold=0.035):
+    """
+    Mengubah nilai asimetri menjadi keterangan kualitatif bertingkat.
+
+    CATATAN PERBAIKAN:
+    Sebelumnya hanya ada 2 tingkat (signifikan/ringan) dengan satu ambang batas
+    (0.05) yang terlalu rendah untuk metrik yang sudah diperbaiki, sehingga
+    hampir semua nilai jatuh ke kategori "signifikan" tanpa membedakan derajat
+    keparahan. Sekarang dibuat 3 tingkat agar lebih mudah dipahami dan tidak
+    membuat pengguna awam panik saat asimetri sebenarnya masih wajar.
+    """
+    if value > high_threshold:
+        return "signifikan"
+    elif value > low_threshold:
         return "sedang"
     else:
-        return "rendah"
+        return "ringan"
 
 
 def build_user_message(landmark_points, stroke_probability, is_stroke):
     """
     Membuat pesan penjelasan dalam bahasa Indonesia yang informatif dan mudah dipahami.
     Tanpa emoji dan menggunakan bahasa yang profesional.
-
-    CATATAN PERBAIKAN BESAR:
-    Versi sebelumnya menampilkan 3 angka asimetri (mulut, mata, kemiringan)
-    yang dihitung terpisah dari model utama. Selain rawan bug (nilai tidak
-    konsisten antar kasus normal/stroke, bahkan berkurang saat asimetri
-    dibuat lebih ekstrem), pendekatan ini pada dasarnya menyesatkan: model
-    MLP mengambil keputusan berdasarkan 956 fitur mentah dari 478 titik
-    wajah secara bersamaan, bukan dari 3 angka sederhana ini. Menampilkan
-    angka presisi yang sebenarnya tidak mencerminkan cara model "berpikir"
-    berisiko membuat pengguna salah paham atau salah percaya pada detail
-    yang keliru.
-
-    Pendekatan baru: fokus pada probabilitas model (satu-satunya angka yang
-    benar-benar berasal dari dan dapat dipertanggungjawabkan oleh model),
-    dipadukan dengan penjelasan edukatif umum mengenai pola wajah yang
-    lazim dikaitkan dengan stroke -- tanpa mengklaim AI menemukan pola
-    spesifik tertentu pada wajah pengguna secara presisi.
     """
     if not landmark_points or len(landmark_points) < TOTAL_LANDMARKS:
         return "Maaf, tidak cukup data landmark wajah untuk analisis yang akurat. Pastikan foto wajah terlihat jelas."
 
-    risk_category = get_risk_category(stroke_probability)
-    percentage = stroke_probability * 100 if is_stroke else (1 - stroke_probability) * 100
+    metrics = calculate_asymmetry_metrics(landmark_points)
+    if not metrics:
+        return "Tidak dapat menghitung metrik asimetri karena data landmark tidak lengkap."
 
-    how_it_works = (
-        "Bagaimana AI membaca wajah Anda?\n"
-        "AI menganalisis 478 titik di seluruh wajah Anda secara bersamaan untuk mencari "
-        "pola ketidaksimetrisan yang umumnya dikaitkan dengan stroke atau TIA, seperti otot "
-        "wajah yang lebih lemah di salah satu sisi, sudut mulut yang tidak sejajar, atau "
-        "perbedaan bukaan mata kiri dan kanan. Karena AI mempertimbangkan seluruh titik "
-        "wajah secara bersamaan, hasil akhirnya berupa satu skor keyakinan menyeluruh, "
-        "bukan skor terpisah untuk tiap bagian wajah."
+    mouth_level = interpret_asymmetry(metrics["mouth_asymmetry"])
+    eye_level = interpret_asymmetry(metrics["eye_asymmetry"])
+    tilt_value = abs(metrics["face_tilt"])
+    tilt_level = "miring" if tilt_value > 0.03 else "tegak"
+
+    # Kalimat klarifikasi: tiga metrik ini hanya indikator pendukung yang
+    # disederhanakan agar mudah dibaca; keputusan akhir AI mempertimbangkan
+    # seluruh 478 titik wajah secara menyeluruh, bukan hanya tiga angka ini.
+    clarifier = (
+        "Catatan: ketiga indikator di bawah ini adalah ringkasan sederhana dari "
+        "sebagian titik wajah untuk membantu Anda memahami hasil. Keputusan akhir "
+        "AI tetap didasarkan pada analisis menyeluruh terhadap 478 titik wajah, "
+        "sehingga tingkat probabilitas di atas adalah acuan utama, bukan indikator "
+        "di bawah ini secara terpisah."
     )
 
     # Bagian hasil dan penjelasan
     if is_stroke:
         result_text = "Hasil: Terdeteksi indikasi STROKE"
         explanation = (
-            f"Tingkat keyakinan AI: {percentage:.1f}% (risiko {risk_category}).\n\n"
-            f"{how_it_works}\n\n"
-            "Pada foto ini, pola ketidaksimetrisan wajah yang terdeteksi cukup kuat sehingga "
-            "AI mengklasifikasikannya sebagai indikasi stroke. Ini bukan berarti AI menemukan "
-            "gejala pasti pada bagian wajah tertentu, melainkan pola keseluruhan wajah yang "
-            "mirip dengan pola pada kasus stroke yang pernah dipelajari AI."
+            f"Probabilitas: {stroke_probability*100:.1f}%.\n"
+            "Model AI mendeteksi adanya asimetri pada wajah yang sering dikaitkan dengan stroke.\n"
+            f"- Asimetri sudut mulut: {metrics['mouth_asymmetry']:.2f} ({mouth_level})\n"
+            f"- Perbedaan tinggi kelopak mata: {metrics['eye_asymmetry']:.2f} ({eye_level})\n"
+            f"- Kemiringan wajah: {tilt_value:.2f} ({tilt_level})\n\n"
+            f"{clarifier}\n\n"
+            "Nilai-nilai ini menunjukkan adanya ketidakseimbangan otot wajah yang mungkin menjadi tanda awal stroke."
         )
         recommendation = (
             "Segera konsultasikan ke dokter atau tenaga medis untuk pemeriksaan lebih lanjut. "
@@ -230,11 +265,13 @@ def build_user_message(landmark_points, stroke_probability, is_stroke):
     else:
         result_text = "Hasil: Normal (tidak terdeteksi stroke)"
         explanation = (
-            f"Tingkat keyakinan AI: {percentage:.1f}% wajah Anda normal (risiko stroke {risk_category}).\n\n"
-            f"{how_it_works}\n\n"
-            "Pada foto ini, AI tidak menemukan pola ketidaksimetrisan wajah yang cukup kuat untuk "
-            "dikategorikan sebagai indikasi stroke. Hasil ini menunjukkan wajah Anda relatif simetris "
-            "menurut pola yang dipelajari AI."
+            f"Probabilitas stroke rendah: {stroke_probability*100:.1f}%.\n"
+            "Wajah terdeteksi relatif simetris:\n"
+            f"- Asimetri sudut mulut: {metrics['mouth_asymmetry']:.2f} ({mouth_level})\n"
+            f"- Perbedaan tinggi kelopak mata: {metrics['eye_asymmetry']:.2f} ({eye_level})\n"
+            f"- Kemiringan wajah: {tilt_value:.2f} ({tilt_level})\n\n"
+            f"{clarifier}\n\n"
+            "Hasil ini menunjukkan tidak ada indikasi kuat stroke berdasarkan pola wajah."
         )
         recommendation = (
             "Hasil ini baik, namun tetaplah waspada. Jika Anda mengalami gejala seperti mati rasa, "
@@ -247,6 +284,7 @@ def build_user_message(landmark_points, stroke_probability, is_stroke):
     )
 
     return result_text + "\n\n" + explanation + "\n\n" + recommendation + disclaimer
+
 
 # ========================
 # FASTAPI ENDPOINT
