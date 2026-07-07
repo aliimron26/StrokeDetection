@@ -156,12 +156,6 @@ def draw_landmarks_on_image(image_bgr, landmark_points, size=(LANDMARK_IMAGE_SIZ
 
 
 def get_risk_category(stroke_probability):
-    """
-    Mengelompokkan probabilitas stroke menjadi kategori risiko yang mudah
-    dipahami masyarakat umum. Berbeda dari metrik asimetri versi sebelumnya,
-    probabilitas ini diambil langsung dari keluaran model, sehingga jauh
-    lebih dapat diandalkan.
-    """
     if stroke_probability >= 0.7:
         return "tinggi"
     elif stroke_probability >= 0.3:
@@ -171,82 +165,51 @@ def get_risk_category(stroke_probability):
 
 
 def build_user_message(landmark_points, stroke_probability, is_stroke):
-    """
-    Membuat pesan penjelasan dalam bahasa Indonesia yang informatif dan mudah dipahami.
-    Tanpa emoji dan menggunakan bahasa yang profesional.
-
-    CATATAN PERBAIKAN BESAR:
-    Versi sebelumnya menampilkan 3 angka asimetri (mulut, mata, kemiringan)
-    yang dihitung terpisah dari model utama. Selain rawan bug (nilai tidak
-    konsisten antar kasus normal/stroke, bahkan berkurang saat asimetri
-    dibuat lebih ekstrem), pendekatan ini pada dasarnya menyesatkan: model
-    MLP mengambil keputusan berdasarkan 956 fitur mentah dari 478 titik
-    wajah secara bersamaan, bukan dari 3 angka sederhana ini. Menampilkan
-    angka presisi yang sebenarnya tidak mencerminkan cara model "berpikir"
-    berisiko membuat pengguna salah paham atau salah percaya pada detail
-    yang keliru.
-
-    Pendekatan baru: fokus pada probabilitas model (satu-satunya angka yang
-    benar-benar berasal dari dan dapat dipertanggungjawabkan oleh model),
-    dipadukan dengan penjelasan edukatif umum mengenai pola wajah yang
-    lazim dikaitkan dengan stroke -- tanpa mengklaim AI menemukan pola
-    spesifik tertentu pada wajah pengguna secara presisi.
-    """
     if not landmark_points or len(landmark_points) < TOTAL_LANDMARKS:
-        return "Maaf, tidak cukup data landmark wajah untuk analisis yang akurat. Pastikan foto wajah terlihat jelas."
+        return "Maaf, data wajah tidak cukup. Pastikan foto wajah terlihat jelas dan menghadap kamera."
 
     risk_category = get_risk_category(stroke_probability)
     percentage = stroke_probability * 100 if is_stroke else (1 - stroke_probability) * 100
 
     how_it_works = (
-        "Bagaimana AI membaca wajah Anda?\n"
-        "AI menganalisis 478 titik di seluruh wajah Anda secara bersamaan untuk mencari "
-        "pola ketidaksimetrisan yang umumnya dikaitkan dengan stroke atau TIA, seperti otot "
-        "wajah yang lebih lemah di salah satu sisi, sudut mulut yang tidak sejajar, atau "
-        "perbedaan bukaan mata kiri dan kanan. Karena AI mempertimbangkan seluruh titik "
-        "wajah secara bersamaan, hasil akhirnya berupa satu skor keyakinan menyeluruh, "
-        "bukan skor terpisah untuk tiap bagian wajah."
+        "AI menganalisis 478 titik di seluruh wajah untuk mendeteksi ketidaksimetrisan halus "
+        "yang sering terkait dengan stroke atau TIA, seperti kelemahan otot wajah, sudut mulut tidak sejajar, "
+        "atau perbedaan bukaan mata. Karena AI menilai semua titik secara bersamaan, hasil akhirnya adalah "
+        "satu skor keyakinan menyeluruh."
     )
 
-    # Bagian hasil dan penjelasan
     if is_stroke:
-        result_text = "Hasil: Terdeteksi indikasi STROKE"
+        result_text = f"Hasil: Terdeteksi indikasi STROKE (keyakinan {percentage:.1f}%)"
         explanation = (
-            f"Tingkat keyakinan AI: {percentage:.1f}% (risiko {risk_category}).\n\n"
-            f"{how_it_works}\n\n"
-            "Pada foto ini, pola ketidaksimetrisan wajah yang terdeteksi cukup kuat sehingga "
-            "AI mengklasifikasikannya sebagai indikasi stroke. Ini bukan berarti AI menemukan "
-            "gejala pasti pada bagian wajah tertentu, melainkan pola keseluruhan wajah yang "
-            "mirip dengan pola pada kasus stroke yang pernah dipelajari AI."
+            f"Tingkat risiko: {risk_category}. Pola ketidaksimetrisan wajah yang ditemukan cukup kuat, "
+            "sehingga AI mengklasifikasikan gambar ini sebagai indikasi stroke. Ini bukan diagnosis pasti, "
+            "melainkan pola yang mirip dengan kasus stroke yang pernah dipelajari AI."
         )
         recommendation = (
-            "Segera konsultasikan ke dokter atau tenaga medis untuk pemeriksaan lebih lanjut. "
-            "Jangan menunda jika Anda juga mengalami gejala lain seperti:\n"
-            "- Kesulitan berbicara atau memahami pembicaraan\n"
+            "Langkah selanjutnya: Segera konsultasikan ke dokter atau tenaga medis. "
+            "Jangan menunda jika juga mengalami gejala lain:\n"
+            "- Kesulitan bicara atau memahami pembicaraan\n"
             "- Mati rasa atau kelemahan pada satu sisi tubuh\n"
             "- Sakit kepala hebat yang muncul tiba-tiba\n"
             "- Gangguan penglihatan pada satu atau kedua mata"
         )
     else:
-        result_text = "Hasil: Normal (tidak terdeteksi stroke)"
+        result_text = f"Hasil: Normal (tidak terdeteksi stroke) - keyakinan {percentage:.1f}%"
         explanation = (
-            f"Tingkat keyakinan AI: {percentage:.1f}% wajah Anda normal (risiko stroke {risk_category}).\n\n"
-            f"{how_it_works}\n\n"
-            "Pada foto ini, AI tidak menemukan pola ketidaksimetrisan wajah yang cukup kuat untuk "
-            "dikategorikan sebagai indikasi stroke. Hasil ini menunjukkan wajah Anda relatif simetris "
-            "menurut pola yang dipelajari AI."
+            f"Tingkat risiko stroke: {risk_category}. AI tidak menemukan pola ketidaksimetrisan yang cukup kuat "
+            "untuk dikategorikan sebagai indikasi stroke. Wajah Anda relatif simetris menurut pola yang dipelajari AI."
         )
         recommendation = (
-            "Hasil ini baik, namun tetaplah waspada. Jika Anda mengalami gejala seperti mati rasa, "
+            "Meskipun hasil ini baik, tetaplah waspada. Jika Anda mengalami gejala seperti mati rasa, "
             "kesulitan bicara, atau sakit kepala hebat, segera periksakan ke dokter meskipun hasil ini normal."
         )
 
     disclaimer = (
-        "\n\nPerhatian: Hasil ini hanya sebagai alat bantu awal dan bukan diagnosis medis. "
-        "Keputusan medis harus selalu berdasarkan pemeriksaan oleh tenaga kesehatan profesional."
+        "\n\nPerhatian: Hasil ini hanya alat bantu awal dan bukan diagnosis medis. "
+        "Keputusan medis harus selalu berdasarkan pemeriksaan tenaga kesehatan profesional."
     )
 
-    return result_text + "\n\n" + explanation + "\n\n" + recommendation + disclaimer
+    return f"{result_text}\n\n{explanation}\n\n{recommendation}{disclaimer}"
 
 # ========================
 # FASTAPI ENDPOINT
