@@ -190,8 +190,10 @@ def build_user_message(landmark_points, stroke_probability, is_stroke):
             "Jangan menunda jika juga mengalami gejala lain:\n"
             "- Kesulitan bicara atau memahami pembicaraan\n"
             "- Mati rasa atau kelemahan pada satu sisi tubuh\n"
-            "- Sakit kepala hebat yang muncul tiba-tiba\n"
-            "- Gangguan penglihatan pada satu atau kedua mata"
+            "- Sakit kepala hebat yang muncul tiba-tiba tanpa sebab jelas\n"
+            "- Gangguan penglihatan pada satu atau kedua mata \n"
+            "- Pusing berat atau kehilangan keseimbangan/koordinasi\n"
+            "- Kebingungan mendadak atau kesulitan memahami orang lain"
         )
     else:
         result_text = f"Hasil: Normal (tidak terdeteksi stroke) - keyakinan {percentage:.1f}%"
@@ -200,13 +202,18 @@ def build_user_message(landmark_points, stroke_probability, is_stroke):
             "untuk dikategorikan sebagai indikasi stroke. Wajah Anda relatif simetris menurut pola yang dipelajari AI."
         )
         recommendation = (
-            "Meskipun hasil ini baik, tetaplah waspada. Jika Anda mengalami gejala seperti mati rasa, "
-            "kesulitan bicara, atau sakit kepala hebat, segera periksakan ke dokter meskipun hasil ini normal."
+            "Meskipun hasil ini baik, tetaplah waspada. Jika Anda mengalami salah satu gejala berikut, "
+            "segera periksakan ke dokter:\n"
+            "- Kesulitan bicara atau memahami pembicaraan\n"
+            "- Mati rasa atau kelemahan pada satu sisi tubuh\n"
+            "- Sakit kepala hebat yang muncul tiba-tiba\n"
+            "- Gangguan penglihatan mendadak\n"
+            "- Pusing atau kehilangan keseimbangan\n"
+            "- Kebingungan mendadak"
         )
 
     disclaimer = (
-        "\n\nPerhatian: Hasil ini hanya alat bantu awal dan bukan diagnosis medis. "
-        "Keputusan medis harus selalu berdasarkan pemeriksaan tenaga kesehatan profesional."
+        ""
     )
 
     return f"{result_text}\n\n{explanation}\n\n{recommendation}{disclaimer}"
